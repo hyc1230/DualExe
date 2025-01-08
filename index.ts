@@ -27,17 +27,22 @@ function restore_input(): void {
 }
 function print_info(content: string): void {
     erase_input();
-    console.log(`${reset_code}[DUALEXE] ${content}`);
+    console.log(`${reset_code}[DUALEXE][INFO]`, content);
+    restore_input();
+}
+function print_error(content: string): void {
+    erase_input();
+    console.error(`${reset_code}[DUALEXE][ERROR]`, content);
     restore_input();
 }
 function print_stdout(label: string, content: string, sgr: string): void {
     erase_input();
-    console.log(`${reset_code}[${label}][STDOUT] ${sgr}${content}`);
+    console.log(`${reset_code}[${label}][STDOUT]${sgr}`, content);
     restore_input();
 }
 function print_stderr(label: string, content: string, sgr: string): void {
     erase_input();
-    console.error(`${reset_code}[${label}][STDERR] ${sgr}${content}`);
+    console.error(`${reset_code}[${label}][STDERR]${sgr}`, content);
     restore_input();
 }
 
@@ -52,12 +57,13 @@ function get_sgr(data: string): string {
 
 const status: {[key: string]: boolean} = {};
 const input_handlers: {[key: string]: (data: string) => void} = {};
-const stop_handlers: {[key: string]: (force: boolean) => void} = {};
+const stop_handlers: {[key: string]: (force?: boolean) => void} = {};
 const asked_to_stop: {[key: string]: boolean} = {};
+
+const promises: Promise<number>[] = [];
 
 function run_script(label: string, cwd: string, command: string, stop_command: string, auto_restart: boolean): Promise<number> {
     return new Promise((resolve, reject) => {
-
         print_info(`Starting: ${label}`);
 
         status[label] = true;
@@ -86,11 +92,18 @@ function run_script(label: string, cwd: string, command: string, stop_command: s
         input_handlers[label] = (data: string): void => {
             proc.stdin.write(data);
         };
-        stop_handlers[label] = (force: boolean): void => {
+        stop_handlers[label] = (force: boolean = false): void => {
             if (force) {
-                proc.kill();
+                if (proc.kill("SIGTERM")) {
+                    print_info(`Sent SIGTERM to process: ${label}`);
+                } else if (proc.kill("SIGKILL")) {
+                    print_info(`Sent SIGKILL to process: ${label}`);
+                } else {
+                    print_info(`Failed to kill process: ${label}`);
+                }
             } else {
                 proc.stdin.write(`${stop_command}\n`);
+                print_info(`Sent stop command to process: ${label}`);
             }
         };
     
@@ -117,48 +130,63 @@ function run_script(label: string, cwd: string, command: string, stop_command: s
     });
 }
 
-const promises: Promise<number>[] = [];
-
 async function handle_input(line: string): Promise<void> {
+    const supported_commands = ["exit", "killall", "start", "input", "stop", "kill", "restart"];
     const args = line.split(" ");
-    if (args.length >= 2) {
-        if (args[0] === "start") {
-            if (status[args[1]]) {
-                print_info(`Already running: ${args[1]}`);
-            } else if (!config[args[1]]) {
-                print_info(`Undefined: ${args[1]}`);
-            } else {
-                promises.push(run_script(args[1], config[args[1]].cwd, config[args[1]].command, config[args[1]].stop_command, config[args[1]].auto_restart));
+    if (args[0] === "exit" || args[0] === "killall") {
+        for (const label in status) {
+            if (status[label]) {
+                asked_to_stop[label] = true;
+                stop_handlers[label](args[0] === "killall");
             }
-        } else if (status[args[1]]) {
-            if (args[0] === "input") {
-                const label = args[1];
-                if (label in input_handlers) {
-                    input_handlers[label](line.split(" ").slice(2).join(" "));
-                }
-            } else if (args[0] === "stop" || args[0] === "kill") {
-                asked_to_stop[args[1]] = true;
-                stop_handlers[args[1]](args[0] === "kill");
-            } else {
-                print_info("Unknown command");
-            }
+        }
+    } else if (args[0] === "start") {
+        if (status[args[1]]) {
+            print_info(`Already running: ${args[1]}`);
+        } else if (!config[args[1]]) {
+            print_info(`Undefined: ${args[1]}`);
         } else {
-            print_info(`Not running / Undefined: ${args[1]}`);
+            asked_to_stop[args[1]] = false;
+            promises.push(run_script(args[1], config[args[1]].cwd, config[args[1]].command, config[args[1]].stop_command, config[args[1]].auto_restart));
+        }
+    } else if (status[args[1]]) {
+        if (args[0] === "input") {
+            const label = args[1];
+            if (label in input_handlers) {
+                input_handlers[label](line.split(" ").slice(2).join(" "));
+            }
+        } else if (args[0] === "stop" || args[0] === "kill") {
+            asked_to_stop[args[1]] = true;
+            stop_handlers[args[1]](args[0] === "kill");
+        } else if (args[0] === "restart") {
+            stop_handlers[args[1]]();
+        } else {
+            print_info("Unknown command");
         }
     } else {
-        print_info("At least 2 args are required");
+        if (supported_commands.findIndex((value, index, obj) => {
+            return value === args[0];
+        }) !== -1) {
+            print_info(`Undefined: ${args[1]}`);
+        } else {
+            print_info("Unknown command");
+        }
     }
 }
 
 process.stdin.on("keypress", (str, key) => {
-    if (key.name === "backspace") {
+    if (key.ctrl && key.name === "c") {
+        process.exit();
+    } else if (key.name === "backspace") {
         current_input = current_input.slice(0, -1);
         erase_input();
         restore_input();
     } else if (key.name === "return" || key.name === "enter") {
         let temp = current_input;
         current_input = "";
-        handle_input(temp);
+        handle_input(temp).catch((err) => {
+            print_error(err);
+        });
     } else if (typeof(str) === "string") {
         current_input += str;
     }
