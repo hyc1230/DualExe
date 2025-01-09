@@ -1,8 +1,9 @@
 import * as cp from "child_process";
 import * as fs from "fs";
 import * as readline from "readline";
-
-const config = JSON.parse(fs.readFileSync("config.json").toString());
+import * as it from "io-ts";
+import { PathReporter } from "io-ts/lib/PathReporter";
+import { isLeft } from "fp-ts/lib/Either";
 
 const rl = readline.createInterface({
     input: process.stdin,
@@ -45,6 +46,28 @@ function print_stderr(label: string, content: string, sgr: string): void {
     console.error(`${reset_code}[${label}][STDERR]${sgr}`, content);
     restore_input();
 }
+
+const SingleConfig = it.type({
+    cwd: it.string,
+    command: it.string,
+    stop_command: it.string,
+    auto_restart: it.boolean
+});
+const Config = it.record(it.string, SingleConfig);
+let cfgtemp;
+try {
+    cfgtemp = JSON.parse(fs.readFileSync("config.json").toString());
+    const chkres = Config.decode(cfgtemp);
+    if (isLeft(chkres)) {
+        throw new Error(PathReporter.report(chkres).join("\n"));
+    }
+} catch (err) {
+    print_error("Failed to read or parse config");
+    print_error(`${err}`);
+    process.exit(1);
+}
+
+const config = cfgtemp;
 
 function get_sgr(data: string): string {
     const matches = data.match(sgr_regex);
