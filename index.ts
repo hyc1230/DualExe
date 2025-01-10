@@ -26,14 +26,14 @@ function erase_input(): void {
 function restore_input(): void {
     process.stdout.write(current_input);
 }
-function print_info(content: string): void {
+function print_info(...content: any[]): void {
     erase_input();
-    console.log(`${reset_code}[DUALEXE][INFO]`, content);
+    console.log(`${reset_code}[DUALEXE][INFO]`, ...content);
     restore_input();
 }
-function print_error(content: string): void {
+function print_error(...content: any[]): void {
     erase_input();
-    console.error(`${reset_code}[DUALEXE][ERROR]`, content);
+    console.error(`${reset_code}[DUALEXE][ERROR]`, ...content);
     restore_input();
 }
 function print_stdout(label: string, content: string, sgr: string): void {
@@ -63,7 +63,7 @@ try {
     }
 } catch (err) {
     print_error("Failed to read or parse config");
-    print_error(`${err}`);
+    print_error(err);
     process.exit(1);
 }
 
