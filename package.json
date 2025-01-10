@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "index.ts",
   "scripts": {
-    "start": "./start.sh"
+    "start": "./start.sh",
+    "compile": "./compile-bin.sh"
   },
   "dependencies": {
     "child_process": "^1.0.2",
@@ -14,6 +15,11 @@
     "typescript": "^5.7.2"
   },
   "devDependencies": {
-    "@types/node": "^22.10.3"
+    "@rollup/plugin-commonjs": "^28.0.2",
+    "@rollup/plugin-node-resolve": "^16.0.0",
+    "@types/node": "^22.10.3",
+    "postject": "^1.0.0-alpha.6",
+    "rollup": "^4.30.1",
+    "rollup-plugin-typescript2": "^0.36.0"
   }
 }

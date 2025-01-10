@@ -220,6 +220,6 @@ for (const label in config) {
     promises.push(run_script(label, config[label].cwd, config[label].command, config[label].stop_command, config[label].auto_restart));
 }
 Promise.all(promises).then(() => {
-    print_info(`All scripts exited`);
+    print_info(`All processes exited`);
     process.exit(0);
 });
