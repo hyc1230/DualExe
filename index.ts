@@ -175,7 +175,7 @@ async function handle_input(line: string): Promise<void> {
     } else if (status[args[1]]) {
         if (args[0] === "input") {
             const label = args[1];
-            if (label in input_handlers) {
+            if (input_handlers[label] !== undefined) {
                 input_handlers[label](line.split(" ").slice(2).join(" "));
             }
         } else if (args[0] === "stop" || args[0] === "kill") {
