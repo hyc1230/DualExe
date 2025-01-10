@@ -4,7 +4,7 @@
   "main": "index.ts",
   "scripts": {
     "start": "./start.sh",
-    "compile": "./compile-bin.sh"
+    "compile": "./compile-sea.sh"
   },
   "dependencies": {
     "child_process": "^1.0.2",
