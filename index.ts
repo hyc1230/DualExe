@@ -4,6 +4,7 @@ import * as readline from "readline";
 import * as it from "io-ts";
 import { PathReporter } from "io-ts/lib/PathReporter";
 import { isLeft } from "fp-ts/lib/Either";
+import { semigroupString } from "fp-ts/lib/Semigroup";
 
 const rl = readline.createInterface({
     input: process.stdin,
@@ -84,6 +85,7 @@ const stop_handlers: {[key: string]: (force?: boolean) => void} = {};
 const asked_to_stop: {[key: string]: boolean} = {};
 
 const promises: Promise<number>[] = [];
+var pendingPromises: number = 0;
 
 function run_script(label: string, cwd: string, command: string, stop_command: string, auto_restart: boolean): Promise<number> {
     return new Promise((resolve, reject) => {
@@ -147,6 +149,7 @@ function run_script(label: string, cwd: string, command: string, stop_command: s
                 });
             } else {
                 resolve(code || 0);
+                pendingPromises--;
             }
         });
         
@@ -155,8 +158,8 @@ function run_script(label: string, cwd: string, command: string, stop_command: s
 
 async function handle_input(line: string): Promise<void> {
     const supported_commands = ["exit", "killall", "start", "input", "stop", "kill", "restart"];
-    const args = line.split(" ");
-    if (args[0] === "exit" || args[0] === "killall") {
+    const args = line.trim().split(" ");
+    if (args[0] === "exit" || args[0] === "killall" || (args.length === 1 && args[0] === "stop")) {
         for (const label in status) {
             if (status[label]) {
                 asked_to_stop[label] = true;
@@ -171,6 +174,7 @@ async function handle_input(line: string): Promise<void> {
         } else {
             asked_to_stop[args[1]] = false;
             promises.push(run_script(args[1], config[args[1]].cwd, config[args[1]].command, config[args[1]].stop_command, config[args[1]].auto_restart));
+            pendingPromises++;
         }
     } else if (status[args[1]]) {
         if (args[0] === "input") {
@@ -190,9 +194,9 @@ async function handle_input(line: string): Promise<void> {
         if (supported_commands.findIndex((value, index, obj) => {
             return value === args[0];
         }) !== -1) {
-            print_info(`Undefined: ${args[1]}`);
+            print_info(`Undefined or not running: (arg1)${args[1]}`);
         } else {
-            print_info("Unknown command");
+            print_info(`Unknown command: (arg0)${args[0]}`);
         }
     }
 }
@@ -219,7 +223,16 @@ process.stdin.on("keypress", (str, key) => {
 for (const label in config) {
     promises.push(run_script(label, config[label].cwd, config[label].command, config[label].stop_command, config[label].auto_restart));
 }
-Promise.all(promises).then(() => {
+pendingPromises = promises.length;
+
+async function waitAlive(): Promise<void> {
+    await Promise.all(promises);
+    if (pendingPromises) {
+        await waitAlive();
+    }
+}
+
+waitAlive().then(() => {
     print_info(`All processes exited`);
     process.exit(0);
 });
