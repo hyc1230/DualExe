@@ -4,7 +4,6 @@ import * as readline from "readline";
 import * as it from "io-ts";
 import { PathReporter } from "io-ts/lib/PathReporter";
 import { isLeft } from "fp-ts/lib/Either";
-import { semigroupString } from "fp-ts/lib/Semigroup";
 
 const rl = readline.createInterface({
     input: process.stdin,
@@ -12,8 +11,12 @@ const rl = readline.createInterface({
     prompt: ""
 });
 
-const reset_code = "\x1b[0m";
 const sgr_regex = /\x1b\[[0-9;]*m/g;
+const sgr_reset = "\x1b[0m";
+const sgr_good = "\x1b[32m";
+const sgr_bad = "\x1b[31m";
+const sgr_stress = "\x1b[33m";
+const sgr_notice = "\x1b[34m";
 
 let current_input = "";
 
@@ -29,22 +32,22 @@ function restore_input(): void {
 }
 function print_info(...content: any[]): void {
     erase_input();
-    console.log(`${reset_code}[DUALEXE][INFO]`, ...content);
+    console.log("[DUALEXE][INFO]", ...content, sgr_reset);
     restore_input();
 }
 function print_error(...content: any[]): void {
     erase_input();
-    console.error(`${reset_code}[DUALEXE][ERROR]`, ...content);
+    console.error(`[DUALEXE][ERROR]${sgr_bad}`, ...content, sgr_reset);
     restore_input();
 }
 function print_stdout(label: string, content: string, sgr: string): void {
     erase_input();
-    console.log(`${reset_code}[${label}][STDOUT]${sgr}`, content);
+    console.log(`[${label}][STDOUT]${sgr}`, content, sgr_reset);
     restore_input();
 }
 function print_stderr(label: string, content: string, sgr: string): void {
     erase_input();
-    console.error(`${reset_code}[${label}][STDERR]${sgr}`, content);
+    console.error(`[${label}][STDERR]${sgr}`, content, sgr_reset);
     restore_input();
 }
 
@@ -85,7 +88,7 @@ function get_sgr(data: string): string {
     if (!matches) {
         return "";
     }
-    const last_reset = matches.lastIndexOf(reset_code);
+    const last_reset = matches.lastIndexOf(sgr_reset);
     return last_reset === -1 ? "" : matches.slice(last_reset + 1).join("");
 }
 
@@ -114,8 +117,21 @@ function run_script(
         const auto_restart = script_config.auto_restart;
         const ignore_stdout = script_config.ignore_stdout || false;
         const ignore_stderr = script_config.ignore_stderr || false;
-        print_info(`Starting: ${label}`);
-        print_info(ignore_stdout, ignore_stderr);
+        print_info(`Starting: ${label}${
+            ignore_stdout || ignore_stderr
+            ?
+                ` ${sgr_notice}w/ silent ` + 
+                (ignore_stdout
+                ? "stdout"
+                : "") + 
+                (ignore_stdout && ignore_stderr
+                ? "&"
+                : "") +
+                (ignore_stderr
+                ? "stderr"
+                : "")
+            : ""
+        }`);
 
         status[label] = true;
         const proc = cp.spawn(command, { cwd: cwd, shell: true });
@@ -187,7 +203,7 @@ function run_script(
 }
 
 async function handle_input(line: string): Promise<void> {
-    const supported_commands = ["exit", "killall", "start", "input", "stop", "kill", "restart"];
+    const supported_commands = ["exit", "killall", "start", "input", "stop", "kill", "restart", "status"];
     const args = line.trim().split(" ");
     if (args[0] === "exit" || args[0] === "killall" || (args.length === 1 && args[0] === "stop")) {
         for (const label in status) {
@@ -196,11 +212,24 @@ async function handle_input(line: string): Promise<void> {
                 stop_handlers[label](args[0] === "killall");
             }
         }
+    } else if (args[0] === "status") {
+        for (const label in status) {
+            print_info(`${label}: ${status[label]
+                ?
+                    asked_to_stop[label]
+                    ?
+                        `${sgr_stress}Stopping`
+                    :
+                        `${sgr_good}Running`
+                :
+                    `${sgr_bad}Stopped`
+            }`);
+        }
     } else if (args[0] === "start") {
         if (status[args[1]]) {
-            print_info(`Already running: ${args[1]}`);
+            print_error(`Already running: ${args[1]}`);
         } else if (!config[args[1]]) {
-            print_info(`Undefined: ${args[1]}`);
+            print_error(`Undefined: ${args[1]}`);
         } else {
             asked_to_stop[args[1]] = false;
             promises.push(run_script(args[1], config[args[1]]));
@@ -218,15 +247,15 @@ async function handle_input(line: string): Promise<void> {
         } else if (args[0] === "restart") {
             stop_handlers[args[1]]();
         } else {
-            print_info("Unknown command");
+            print_error("Unknown command");
         }
     } else {
         if (supported_commands.findIndex((value, index, obj) => {
             return value === args[0];
         }) !== -1) {
-            print_info(`Undefined or not running: (arg1)${args[1]}`);
+            print_error(`Undefined or not running: (arg1)${args[1]}`);
         } else {
-            print_info(`Unknown command: (arg0)${args[0]}`);
+            print_error(`Unknown command: (arg0)${args[0]}`);
         }
     }
 }
