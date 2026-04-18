@@ -52,7 +52,9 @@ const SingleConfig = it.type({
     cwd: it.string,
     command: it.string,
     stop_command: it.string,
-    auto_restart: it.boolean
+    auto_restart: it.boolean,
+    ignore_stdout: it.boolean || it.undefined,
+    ignore_stderr: it.boolean || it.undefined,
 });
 const Config = it.record(it.string, SingleConfig);
 let cfgtemp;
@@ -68,7 +70,15 @@ try {
     process.exit(1);
 }
 
-const config = cfgtemp;
+interface SingleConfigInterface {
+    cwd: string,
+    command: string,
+    stop_command: string,
+    auto_restart: boolean,
+    ignore_stdout?: boolean,
+    ignore_stderr?: boolean,
+};
+const config: {[key: string]: SingleConfigInterface} = cfgtemp;
 
 function get_sgr(data: string): string {
     const matches = data.match(sgr_regex);
@@ -87,33 +97,53 @@ const asked_to_stop: {[key: string]: boolean} = {};
 const promises: Promise<number>[] = [];
 var pendingPromises: number = 0;
 
-function run_script(label: string, cwd: string, command: string, stop_command: string, auto_restart: boolean): Promise<number> {
+function run_script(
+    label: string,
+    script_config: SingleConfigInterface
+    // cwd: string,
+    // command: string,
+    // stop_command: string,
+    // auto_restart: boolean,
+    // ignore_stdout?: boolean,
+    // ignore_stderr?: boolean
+): Promise<number> {
     return new Promise((resolve, reject) => {
+        const cwd = script_config.cwd;
+        const command = script_config.command;
+        const stop_command = script_config.stop_command;
+        const auto_restart = script_config.auto_restart;
+        const ignore_stdout = script_config.ignore_stdout || false;
+        const ignore_stderr = script_config.ignore_stderr || false;
         print_info(`Starting: ${label}`);
+        print_info(ignore_stdout, ignore_stderr);
 
         status[label] = true;
         const proc = cp.spawn(command, { cwd: cwd, shell: true });
         let stdout_buf: string = "", stderr_buf: string = "";
         let stdout_sgr: string = "", stderr_sgr: string = "";
         
-        proc.stdout.on("data", (data) => {
-            stdout_buf += data.toString();
-            let lines = stdout_buf.split("\n");
-            stdout_buf = lines.pop() || "";
-            for (const l of lines) {
-                print_stdout(label, l, stdout_sgr);
-                stdout_sgr = get_sgr(stdout_sgr + l);
-            }
-        });
-        proc.stderr.on("data", (data) => {
-            stderr_buf += data.toString();
-            let lines = stderr_buf.split("\n");
-            stderr_buf = lines.pop() || "";
-            for (const l of lines) {
-                print_stderr(label, l, stderr_sgr);
-                stderr_sgr = get_sgr(stderr_sgr + l);
-            }
-        });
+        if (!ignore_stdout) {
+            proc.stdout.on("data", (data) => {
+                stdout_buf += data.toString();
+                let lines = stdout_buf.split("\n");
+                stdout_buf = lines.pop() || "";
+                for (const l of lines) {
+                    print_stdout(label, l, stdout_sgr);
+                    stdout_sgr = get_sgr(stdout_sgr + l);
+                }
+            });
+        }
+        if (!ignore_stderr) {
+            proc.stderr.on("data", (data) => {
+                stderr_buf += data.toString();
+                let lines = stderr_buf.split("\n");
+                stderr_buf = lines.pop() || "";
+                for (const l of lines) {
+                    print_stderr(label, l, stderr_sgr);
+                    stderr_sgr = get_sgr(stderr_sgr + l);
+                }
+            });
+        }
         input_handlers[label] = (data: string): void => {
             proc.stdin.write(data);
         };
@@ -144,7 +174,7 @@ function run_script(label: string, cwd: string, command: string, stop_command: s
             }
             print_info(`Exit: ${label} / code ${code}`);
             if (auto_restart && !asked_to_stop[label]) {
-                run_script(label, cwd, command, stop_command, auto_restart).then((code: number) => {
+                run_script(label, script_config).then((code: number) => {
                     resolve(code);
                 });
             } else {
@@ -173,7 +203,7 @@ async function handle_input(line: string): Promise<void> {
             print_info(`Undefined: ${args[1]}`);
         } else {
             asked_to_stop[args[1]] = false;
-            promises.push(run_script(args[1], config[args[1]].cwd, config[args[1]].command, config[args[1]].stop_command, config[args[1]].auto_restart));
+            promises.push(run_script(args[1], config[args[1]]));
             pendingPromises++;
         }
     } else if (status[args[1]]) {
@@ -221,7 +251,7 @@ process.stdin.on("keypress", (str, key) => {
 });
 
 for (const label in config) {
-    promises.push(run_script(label, config[label].cwd, config[label].command, config[label].stop_command, config[label].auto_restart));
+    promises.push(run_script(label, config[label]));
 }
 pendingPromises = promises.length;
 
