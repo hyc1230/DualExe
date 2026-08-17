@@ -51,14 +51,18 @@ function print_stderr(label: string, content: string, sgr: string): void {
     restore_input();
 }
 
-const SingleConfig = it.type({
-    cwd: it.string,
-    command: it.string,
-    stop_command: it.string,
-    auto_restart: it.boolean,
-    ignore_stdout: it.boolean || it.undefined,
-    ignore_stderr: it.boolean || it.undefined,
-});
+const SingleConfig = it.intersection([
+    it.type({
+        cwd: it.string,
+        command: it.string,
+        stop_command: it.string,
+        auto_restart: it.boolean,
+    }),
+    it.partial({
+        ignore_stdout: it.boolean,
+        ignore_stderr: it.boolean,
+    }),
+]);
 const Config = it.record(it.string, SingleConfig);
 let cfgtemp;
 try {
