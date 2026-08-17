@@ -62,7 +62,7 @@ const SingleConfig = it.type({
 const Config = it.record(it.string, SingleConfig);
 let cfgtemp;
 try {
-    cfgtemp = JSON.parse(fs.readFileSync("config.json").toString());
+    cfgtemp = JSON.parse(fs.readFileSync("dualexe.config.json").toString());
     const chkres = Config.decode(cfgtemp);
     if (isLeft(chkres)) {
         throw new Error(PathReporter.report(chkres).join("\n"));
